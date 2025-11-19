@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Translation QA System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen">
+            <div class="login-container">
+                <h1>Translation QA System</h1>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <div id="login-error" class="error-message"></div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Application -->
+        <div id="main-screen" class="screen hidden">
+            <nav class="navbar">
+                <div class="nav-brand">Translation QA</div>
+                <div class="nav-menu">
+                    <a href="#" data-view="translations" class="nav-link active">Translations</a>
+                    <a href="#" data-view="reports" class="nav-link">Reports</a>
+                    <a href="#" data-view="admin" class="nav-link admin-only">Admin</a>
+                </div>
+                <div class="nav-user">
+                    <span id="current-user"></span>
+                    <button id="logout-btn" class="btn btn-secondary">Logout</button>
+                </div>
+            </nav>
+
+            <div class="container">
+                <!-- Translations View -->
+                <div id="translations-view" class="view">
+                    <!-- Translation Review Dashboard -->
+                    <div id="translation-dashboard" class="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8 hidden">
+                        <div class="max-w-7xl mx-auto">
+                            <!-- Header with Pagination -->
+                            <div class="mb-8 flex items-center justify-between">
+                                <div>
+                                    <h1 class="text-4xl font-bold text-slate-800 mb-2">Translation Review Dashboard</h1>
+                                    <p class="text-slate-600" id="translation-languages">English → Spanish</p>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div class="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            id="search-translation-id"
+                                            placeholder="Search by ID (e.g., 245db4...)"
+                                            class="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            style="width: 200px;"
+                                        >
+                                        <button id="search-translation-btn" class="px-3 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 flex items-center gap-1">
+                                            <span class="material-icons" style="font-size: 18px;">search</span>
+                                        </button>
+                                    </div>
+                                    <span class="text-slate-600 font-medium" id="pagination-info">1 of 1</span>
+                                    <button id="prev-translation" class="px-4 py-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                                        <span class="material-icons">chevron_left</span>
+                                        Previous
+                                    </button>
+                                    <button id="next-translation" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                                        Next
+                                        <span class="material-icons">chevron_right</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Metrics Dashboard -->
+                            <div class="mb-8">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <span class="material-icons text-blue-600">trending_up</span>
+                                    <h2 class="text-xl font-bold text-slate-800" id="translation-id-subtitle">Quality Metrics</h2>
+                                    <div class="ml-auto bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-xl shadow-lg">
+                                        <div class="text-xs font-medium uppercase tracking-wide opacity-90">Overall LLM Score</div>
+                                        <div class="text-3xl font-bold" id="global-llm-score">0.00</div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-3 gap-6" id="metrics-grid">
+                                    <!-- Metrics will be inserted here -->
+                                </div>
+                            </div>
+
+                            <!-- Side by Side Comparison -->
+                            <div class="grid grid-cols-2 gap-6">
+                                <!-- English Original -->
+                                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
+                                    <div class="bg-gradient-to-r from-slate-700 to-slate-800 text-white px-6 py-4 font-semibold flex items-center justify-between">
+                                        <span>Original Text (English)</span>
+                                        <span class="text-xs bg-white/20 px-3 py-1 rounded-full">Source</span>
+                                    </div>
+                                    <div class="p-6">
+                                        <div id="original-text" class="text-slate-800 leading-relaxed text-lg"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Spanish Translation -->
+                                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-blue-200">
+                                    <div class="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 font-semibold flex items-center justify-between">
+                                        <span>Translation (Spanish)</span>
+                                        <span class="text-xs bg-white/20 px-3 py-1 rounded-full">Target</span>
+                                    </div>
+                                    <div class="p-6">
+                                        <div id="translated-text" class="text-slate-800 leading-relaxed text-lg"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Comments Section -->
+                            <div class="mt-8">
+                                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
+                                    <div class="bg-gradient-to-r from-slate-600 to-slate-700 text-white px-6 py-4 font-semibold flex items-center gap-2">
+                                        <span class="material-icons">comment</span>
+                                        <span>Additional Comments (Optional)</span>
+                                    </div>
+                                    <div class="p-6">
+                                        <textarea
+                                            id="review-notes"
+                                            rows="4"
+                                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-slate-800"
+                                            placeholder="Add any notes or observations about this translation..."
+                                        ></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="mt-8 flex justify-end">
+                                <button id="submit-review" class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-8 py-3 rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                                    Submit Review
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="translations-loading" class="text-center py-20">
+                        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        <p class="mt-4 text-slate-600">Loading translations...</p>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="translations-empty" class="text-center py-20 hidden">
+                        <span class="material-icons text-slate-300" style="font-size: 64px;">translate</span>
+                        <p class="mt-4 text-slate-600">No translations available</p>
+                    </div>
+                </div>
+
+                <!-- Reports View -->
+                <div id="reports-view" class="view hidden">
+                    <div class="view-header">
+                        <h2>Reports</h2>
+                        <div class="filters">
+                            <select id="report-execution-filter" class="filter-select">
+                                <option value="">All Executions</option>
+                            </select>
+                            <select id="report-prompt-filter" class="filter-select">
+                                <option value="">All Prompts</option>
+                            </select>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="manual-only-filter">
+                                Show only manual scores
+                            </label>
+                            <button id="apply-report-filters" class="btn btn-primary">Apply</button>
+                        </div>
+                    </div>
+
+                    <div id="reports-list" class="reports-list"></div>
+                </div>
+
+                <!-- Admin View -->
+                <div id="admin-view" class="view hidden">
+                    <div class="view-header">
+                        <h2>Admin Panel</h2>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3>Create New User</h3>
+                        <form id="create-user-form">
+                            <div class="form-group">
+                                <label for="new-username">Username</label>
+                                <input type="text" id="new-username" name="username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="new-email">Email</label>
+                                <input type="email" id="new-email" name="email" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="new-password">Password</label>
+                                <input type="password" id="new-password" name="password" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="new-is-admin" name="is_admin">
+                                    Admin User
+                                </label>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Create User</button>
+                            <div id="create-user-message" class="message"></div>
+                        </form>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3>Users List</h3>
+                        <div id="users-list" class="users-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Translation Detail Modal -->
+    <div id="translation-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Translation Details</h2>
+            <div id="translation-detail"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="app_pagination.js"></script>
+    <script>
+        // Add pagination event listeners after DOM is loaded
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const prevBtn = document.getElementById('prev-translation');
+                const nextBtn = document.getElementById('next-translation');
+                const submitBtn = document.getElementById('submit-review');
+                const searchBtn = document.getElementById('search-translation-btn');
+                const searchInput = document.getElementById('search-translation-id');
+
+                if (prevBtn) prevBtn.addEventListener('click', () => navigateTranslation(-1));
+                if (nextBtn) nextBtn.addEventListener('click', () => navigateTranslation(1));
+                if (submitBtn) submitBtn.addEventListener('click', submitCurrentReview);
+                if (searchBtn) searchBtn.addEventListener('click', searchTranslationById);
+
+                // Allow Enter key to trigger search
+                if (searchInput) {
+                    searchInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            searchTranslationById();
+                        }
+                    });
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+
+Extract and translate the following JSON keys from English to Spanish: summary, insight1.text, insight2.text, insight3.text.
+
+Return the original JSON structure with translated values, plus add a "score" object containing:
+- semantic_coherence: score 0-1
+- meaning_fidelity: score 0-1  
+- naturalness: score 0-1
+- overall_score: average of the three scores
+
+Output only valid JSON without markdown formatting or additional text.
+
+output template
+
+```json
+{
+  "summary": "",
+  "insight1": {
+    "text": "",
+    "material_icon": ""
+  },
+  "insight2": {
+    "text": "",
+    "material_icon": ""
+  },
+  "insight3": {
+    "text": "",
+    "material_icon": ""
+  },
+  "score": {
+    "coherence": 0.0,
+    "fidelity": 0.0,
+    "naturalness": 0.0,
+    "overall": 0.0
+  }
+}
+```
+
+input
+
+```json
+{
+  "summary": "In October, you sent <strong>656 USD</strong> (<strong>12,281 MXN</strong>) across <strong>5 transfers</strong> to <strong>1 receiver</strong>. Year to date, you've sent <strong>656 USD</strong>, with <strong>Tejas</strong> receiving your full support this month.",
+  "insight1": {
+    "text": "By choosing Pangea, you gave Tejas about <strong>262 MXN</strong> extra this month compared to the competition's lowest rate.",
+    "material_icon": "savings",
+    "behavioral_dimension": "Extra value for receiver",
+    "metric_type": "Extra money vs competition",
+    "total_relevance_score": 18,
+    "rationale": "High Personal Specificity (mentions Tejas), Financial Relevance (extra MXN), and Positive Achievement (clear financial benefit)."
+  },
+  "insight2": {
+    "text": "You sent <strong>656 USD</strong> this month — <strong>83% more</strong> than Chicago's average of 359 USD, showing strong commitment.",
+    "material_icon": "trending_up",
+    "behavioral_dimension": "Total amount sent",
+    "metric_type": "Regional comparison",
+    "total_relevance_score": 17,
+    "rationale": "High Behavioral Significance (above-average support) and Financial Relevance (outpacing regional peers)."
+  },
+  "insight3": {
+    "text": "Your best exchange rate this month was <strong>18.15</strong>, stronger than Chicago's average of <strong>17.99</strong>.",
+    "material_icon": "attach_money",
+    "behavioral_dimension": "FX comparison",
+    "metric_type": "Regional rate outperformance",
+    "total_relevance_score": 16,
+    "rationale": "Strong Financial Relevance (optimal FX rate) and Positive Achievement (beating regional benchmark)."
+  }
+}
+```

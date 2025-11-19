@@ -1,0 +1,33 @@
+{
+  "summary": "En octubre, enviaste <strong>656 USD</strong> (<strong>12,281 MXN</strong>) en <strong>5 transferencias</strong> a <strong>1 destinatario</strong>. Hasta la fecha este año, has enviado <strong>656 USD</strong>, con <strong>Tejas</strong> recibiendo tu apoyo completo este mes.",
+  "insight1": {
+    "text": "Al elegir Pangea, diste a Tejas aproximadamente <strong>262 MXN</strong> adicionales este mes comparado con la tasa más baja de la competencia.",
+    "material_icon": "savings",
+    "behavioral_dimension": "Extra value for receiver",
+    "metric_type": "Extra money vs competition",
+    "total_relevance_score": 18,
+    "rationale": "High Personal Specificity (mentions Tejas), Financial Relevance (extra MXN), and Positive Achievement (clear financial benefit)."
+  },
+  "insight2": {
+    "text": "Enviaste <strong>656 USD</strong> este mes — <strong>83% más</strong> que el promedio de 359 USD en Chicago, mostrando un fuerte compromiso.",
+    "material_icon": "trending_up",
+    "behavioral_dimension": "Total amount sent",
+    "metric_type": "Regional comparison",
+    "total_relevance_score": 17,
+    "rationale": "High Behavioral Significance (above-average support) and Financial Relevance (outpacing regional peers)."
+  },
+  "insight3": {
+    "text": "Tu mejor tipo de cambio este mes fue <strong>18.15</strong>, más favorable que el promedio de Chicago de <strong>17.99</strong>.",
+    "material_icon": "attach_money",
+    "behavioral_dimension": "FX comparison",
+    "metric_type": "Regional rate outperformance",
+    "total_relevance_score": 16,
+    "rationale": "Strong Financial Relevance (optimal FX rate) and Positive Achievement (beating regional benchmark)."
+  },
+  "score": {
+    "coherence": 0.90,
+    "fidelity": 0.87,
+    "naturalness": 0.91,
+    "overall": 0.89
+  }
+}

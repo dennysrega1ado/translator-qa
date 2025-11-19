@@ -1,0 +1,213 @@
+import React, { useState } from 'react';
+import { Info, Star, TrendingUp } from 'lucide-react';
+
+export default function TranslationReview() {
+  const [ratings, setRatings] = useState({
+    coherence: 0,
+    fidelity: 0,
+    naturalness: 0
+  });
+  
+  const [hoveredInfo, setHoveredInfo] = useState(null);
+  
+  // Sample data
+  const translation = {
+    english: "Sustainable development requires a careful balance between the economic, social and environmental needs of present and future generations.",
+    spanish: "El desarrollo sostenible requiere un equilibrio cuidadoso entre las necesidades económicas, sociales y ambientales de las generaciones presentes y futuras.",
+    llmScores: {
+      coherence: 0.92,
+      fidelity: 0.88,
+      naturalness: 0.95
+    }
+  };
+  
+  const globalLLMScore = ((translation.llmScores.coherence + translation.llmScores.fidelity + translation.llmScores.naturalness) / 3).toFixed(2);
+  
+  const aspectInfo = {
+    coherence: "Evaluates whether the translation maintains the logical structure and connection between ideas from the original text.",
+    fidelity: "Measures how faithfully the exact meaning of the original text has been transferred without omissions or additions.",
+    naturalness: "Determines if the translated text sounds fluid and natural in the target language, as if it had been originally written in that language."
+  };
+  
+  const handleRating = (aspect, score) => {
+    setRatings(prev => ({ ...prev, [aspect]: score }));
+  };
+  
+  const StarRating = ({ aspect, value }) => {
+    return (
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            onClick={() => handleRating(aspect, star)}
+            className="focus:outline-none transition-transform hover:scale-110"
+          >
+            <Star
+              size={20}
+              className={star <= value ? "fill-yellow-400 text-yellow-400" : "text-gray-300"}
+            />
+          </button>
+        ))}
+      </div>
+    );
+  };
+  
+  const MetricCard = ({ title, llmScore, userScore, icon }) => {
+    const percentage = llmScore * 100;
+    let colorClass = "from-red-500 to-red-600";
+    if (llmScore >= 0.7) colorClass = "from-green-500 to-green-600";
+    else if (llmScore >= 0.5) colorClass = "from-yellow-500 to-yellow-600";
+    
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`p-2 rounded-lg bg-gradient-to-br ${colorClass}`}>
+            {icon}
+          </div>
+          <h3 className="font-semibold text-slate-700">{title}</h3>
+          <div className="relative ml-auto">
+            <Info
+              size={18}
+              className="text-slate-400 cursor-help"
+              onMouseEnter={() => setHoveredInfo(title.toLowerCase())}
+              onMouseLeave={() => setHoveredInfo(null)}
+            />
+            {hoveredInfo === title.toLowerCase() && (
+              <div className="absolute right-0 top-8 z-10 w-72 bg-slate-800 text-white text-xs p-3 rounded-lg shadow-xl">
+                {aspectInfo[title.toLowerCase()]}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="space-y-4">
+          {/* LLM Reference Score */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                LLM Reference
+              </span>
+              <span className="text-2xl font-bold text-slate-700">
+                {llmScore.toFixed(2)}
+              </span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-full bg-gradient-to-r ${colorClass} transition-all duration-300`}
+                style={{ width: `${percentage}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* User Rating */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">
+                Your Rating
+              </span>
+              <span className="text-sm font-semibold text-blue-600">
+                {userScore > 0 ? `${userScore}/5` : 'Not rated'}
+              </span>
+            </div>
+            <StarRating aspect={title.toLowerCase()} value={userScore} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-slate-800 mb-2">
+            Translation Review Dashboard
+          </h1>
+          <p className="text-slate-600">English → Spanish</p>
+        </div>
+        
+        {/* Metrics Dashboard */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="text-blue-600" size={24} />
+            <h2 className="text-xl font-bold text-slate-800">
+              Quality Metrics
+            </h2>
+            <div className="ml-auto bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-xl shadow-lg">
+              <div className="text-xs font-medium uppercase tracking-wide opacity-90">
+                Overall LLM Score
+              </div>
+              <div className="text-3xl font-bold">
+                {globalLLMScore}
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-6">
+            <MetricCard
+              title="Coherence"
+              llmScore={translation.llmScores.coherence}
+              userScore={ratings.coherence}
+              icon={<svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>}
+            />
+            <MetricCard
+              title="Fidelity"
+              llmScore={translation.llmScores.fidelity}
+              userScore={ratings.fidelity}
+              icon={<svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>}
+            />
+            <MetricCard
+              title="Naturalness"
+              llmScore={translation.llmScores.naturalness}
+              userScore={ratings.naturalness}
+              icon={<svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+              </svg>}
+            />
+          </div>
+        </div>
+        
+        {/* Side by Side Comparison */}
+        <div className="grid grid-cols-2 gap-6">
+          {/* English Original */}
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white px-6 py-4 font-semibold flex items-center justify-between">
+              <span>Original Text (English)</span>
+              <span className="text-xs bg-white/20 px-3 py-1 rounded-full">Source</span>
+            </div>
+            <div className="p-6">
+              <p className="text-slate-800 leading-relaxed text-lg">
+                {translation.english}
+              </p>
+            </div>
+          </div>
+          
+          {/* Spanish Translation */}
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-blue-200">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 font-semibold flex items-center justify-between">
+              <span>Translation (Spanish)</span>
+              <span className="text-xs bg-white/20 px-3 py-1 rounded-full">Target</span>
+            </div>
+            <div className="p-6">
+              <p className="text-slate-800 leading-relaxed text-lg">
+                {translation.spanish}
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Submit Button */}
+        <div className="mt-8 flex justify-end">
+          <button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-8 py-3 rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+            Submit Review
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
