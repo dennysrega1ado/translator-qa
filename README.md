@@ -2,6 +2,8 @@
 
 A full-stack application for managing and evaluating translation quality assessments.
 
+![image](img/output_1.5x.gif)
+
 ## Features
 
 - **Authentication System**: Secure login with JWT tokens
