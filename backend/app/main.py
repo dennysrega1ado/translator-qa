@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app import models
-from app.routers import auth, translations, scores, reports, prompts
+from app.routers import auth, translations, scores, reports, prompts, admin
 from app.init_db import init_database
 
 # Create tables
@@ -29,6 +29,7 @@ app.include_router(translations.router)
 app.include_router(scores.router)
 app.include_router(reports.router)
 app.include_router(prompts.router)
+app.include_router(admin.router)
 
 
 @app.on_event("startup")

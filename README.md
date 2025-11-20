@@ -108,7 +108,7 @@ translator-qa/
 
 1. **Clone the repository**
 ```bash
-cd /Users/dennysregalado/repo/ai/translator-qa
+cd ~/repo/ai/translator-qa
 ```
 
 2. **Start the application**

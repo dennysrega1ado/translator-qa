@@ -150,3 +150,19 @@ class ExecutionReport(BaseModel):
     avg_combined_fidelity: Optional[float]
     avg_combined_naturalness: Optional[float]
     avg_combined_overall: Optional[float]
+
+
+class ContributorUser(BaseModel):
+    username: str
+    contributions: int
+
+
+class SummaryReport(BaseModel):
+    total_translations: int
+    translations_reviewed: int
+    review_percentage: float
+    avg_manual_overall: Optional[float]
+    avg_manual_coherence: Optional[float]
+    avg_manual_fidelity: Optional[float]
+    avg_manual_naturalness: Optional[float]
+    contributors: list[ContributorUser]

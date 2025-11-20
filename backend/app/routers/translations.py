@@ -78,10 +78,21 @@ async def list_executions(
 ):
     executions = db.query(
         models.Translation.execution_id,
-        func.count(models.Translation.id).label('count')
-    ).group_by(models.Translation.execution_id).all()
+        func.count(models.Translation.id).label('count'),
+        func.max(models.Translation.created_at).label('latest_date'),
+        func.max(models.Translation.execution_description).label('description')
+    ).group_by(
+        models.Translation.execution_id
+    ).order_by(
+        func.max(models.Translation.created_at).desc()
+    ).all()
 
-    return [{"execution_id": e.execution_id, "count": e.count} for e in executions]
+    return [{
+        "execution_id": e.execution_id,
+        "count": e.count,
+        "latest_date": e.latest_date.isoformat() if e.latest_date else None,
+        "description": e.description
+    } for e in executions]
 
 
 @router.post("/", response_model=schemas.Translation)

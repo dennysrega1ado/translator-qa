@@ -36,6 +36,7 @@ class Translation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     execution_id = Column(String(100), index=True, nullable=False)
+    execution_description = Column(Text)
     prompt_id = Column(Integer, ForeignKey("prompts.id"), nullable=False)
 
     # Content

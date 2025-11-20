@@ -100,17 +100,28 @@ function showMainScreen() {
     // Show/hide admin menu
     if (state.user.is_admin) {
         document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    } else {
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
     }
 
     loadInitialData();
 }
 
 function showView(viewName) {
+    // Check if user is admin for restricted views
+    if ((viewName === 'reports' || viewName === 'admin') && !state.user.is_admin) {
+        alert('Access denied. This section is only available for administrators.');
+        return;
+    }
+
     // Update navigation
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.remove('active');
     });
-    document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
+    const targetLink = document.querySelector(`[data-view="${viewName}"]`);
+    if (targetLink) {
+        targetLink.classList.add('active');
+    }
 
     // Update views
     document.querySelectorAll('.view').forEach(view => {
@@ -132,6 +143,8 @@ function showView(viewName) {
         loadReports();
     } else if (viewName === 'admin') {
         loadUsers();
+    } else if (viewName === 'summary') {
+        loadSummary();
     }
 }
 
@@ -169,6 +182,9 @@ function populateFilters() {
             const option = document.createElement('option');
             option.value = exec.execution_id;
             option.textContent = `${exec.execution_id} (${exec.count} translations)`;
+            if (exec.description) {
+                option.title = exec.description;
+            }
             select.appendChild(option);
         });
     });
@@ -481,6 +497,9 @@ function renderReportScoreGroup(title, scores) {
 async function loadUsers() {
     try {
         const users = await apiRequest('/auth/users');
+
+        // Load S3 bucket info
+        loadBucketInfo();
         renderUsers(users);
     } catch (error) {
         console.error('Error loading users:', error);
@@ -540,6 +559,179 @@ async function createUser(event) {
     }
 }
 
+// Database Clean Functions
+async function cleanDatabaseTables() {
+    const cleanButton = document.getElementById('clean-tables-btn');
+    const cleanResult = document.getElementById('clean-tables-result');
+
+    // Show confirmation dialog
+    const confirmed = confirm(
+        '⚠️ WARNING: This will permanently delete all data from the following tables:\n\n' +
+        '• Manual Scores\n' +
+        '• Translations\n' +
+        '• Prompts\n\n' +
+        'This action CANNOT be undone!\n\n' +
+        'Are you absolutely sure you want to continue?'
+    );
+
+    if (!confirmed) {
+        cleanResult.textContent = 'Operation cancelled by user';
+        cleanResult.className = 'message info';
+        setTimeout(() => {
+            cleanResult.textContent = '';
+            cleanResult.className = 'message';
+        }, 3000);
+        return;
+    }
+
+    try {
+        cleanButton.disabled = true;
+        cleanResult.textContent = 'Cleaning tables... This may take a moment.';
+        cleanResult.className = 'message info';
+
+        const result = await apiRequest('/admin/clean-tables', {
+            method: 'POST'
+        });
+
+        if (result.success) {
+            cleanResult.textContent = `✓ ${result.message}\n\nTables cleaned: ${result.tables_cleaned.join(', ')}`;
+            cleanResult.className = 'message success';
+
+            // Reload current view if we're on translations or reports
+            if (state.currentView === 'translations') {
+                loadPrompts();
+            } else if (state.currentView === 'reports') {
+                loadReports();
+            }
+        } else {
+            cleanResult.textContent = `✗ ${result.message}`;
+            cleanResult.className = 'message error';
+        }
+    } catch (error) {
+        cleanResult.textContent = `Error: ${error.message}`;
+        cleanResult.className = 'message error';
+    } finally {
+        cleanButton.disabled = false;
+    }
+}
+
+// S3 Admin Functions
+async function loadBucketInfo() {
+    try {
+        const bucketInfo = await apiRequest('/admin/s3/bucket-info');
+        document.getElementById('s3-bucket-name').value = bucketInfo.bucket || 'N/A';
+    } catch (error) {
+        console.error('Error loading bucket info:', error);
+        document.getElementById('s3-bucket-name').value = 'Error loading bucket';
+    }
+}
+
+async function validateS3Prefix() {
+    const prefix = document.getElementById('s3-prefix').value.trim();
+    const validationResult = document.getElementById('s3-validation-result');
+    const loadButton = document.getElementById('load-translations-btn');
+
+    if (!prefix) {
+        validationResult.textContent = 'Please enter an S3 prefix';
+        validationResult.className = 'message error';
+        loadButton.disabled = true;
+        return;
+    }
+
+    try {
+        validationResult.textContent = 'Validating prefix...';
+        validationResult.className = 'message info';
+        loadButton.disabled = true;
+
+        const result = await apiRequest('/admin/s3/validate-prefix', {
+            method: 'POST',
+            body: JSON.stringify({ prefix })
+        });
+
+        if (result.valid) {
+            validationResult.textContent = `✓ ${result.message}. Found ${result.sample_files.length} sample files.`;
+            validationResult.className = 'message success';
+            loadButton.disabled = false;
+        } else {
+            validationResult.textContent = `✗ ${result.message}`;
+            validationResult.className = 'message error';
+            loadButton.disabled = true;
+
+            if (result.sample_files && result.sample_files.length > 0) {
+                validationResult.textContent += `\n\nSample files found:\n${result.sample_files.slice(0, 5).join('\n')}`;
+            }
+        }
+    } catch (error) {
+        validationResult.textContent = `Error: ${error.message}`;
+        validationResult.className = 'message error';
+        loadButton.disabled = true;
+    }
+}
+
+async function loadTranslationsFromS3() {
+    const prefix = document.getElementById('s3-prefix').value.trim();
+    const description = document.getElementById('s3-description').value.trim();
+    const loadResult = document.getElementById('s3-load-result');
+    const loadButton = document.getElementById('load-translations-btn');
+    const validateButton = document.getElementById('validate-prefix-btn');
+    const loadingOverlay = document.getElementById('loading-overlay');
+
+    if (!prefix) {
+        loadResult.textContent = 'Please enter an S3 prefix';
+        loadResult.className = 'message error';
+        return;
+    }
+
+    if (!description) {
+        loadResult.textContent = 'Please enter a description';
+        loadResult.className = 'message error';
+        return;
+    }
+
+    try {
+        // Show loading overlay and disable buttons
+        loadingOverlay.classList.remove('hidden');
+        loadButton.disabled = true;
+        validateButton.disabled = true;
+        loadResult.textContent = '';
+        loadResult.className = 'message';
+
+        const result = await apiRequest('/admin/s3/load-translations', {
+            method: 'POST',
+            body: JSON.stringify({ prefix, description })
+        });
+
+        // Hide loading overlay
+        loadingOverlay.classList.add('hidden');
+
+        if (result.success) {
+            loadResult.textContent = `✓ ${result.message}\n\nExecution ID: ${result.execution_id}\nTranslations loaded: ${result.translations_loaded}\nPrompts created: ${result.prompts_created}`;
+            loadResult.className = 'message success';
+
+            // Clear form after successful load
+            document.getElementById('s3-prefix').value = 'translations/llm-output/2025/10/latest';
+            document.getElementById('s3-description').value = '';
+            document.getElementById('s3-validation-result').textContent = '';
+            loadButton.disabled = true;
+
+            // Reload prompts and translations if we're on those views
+            if (state.currentView === 'translations') {
+                loadPrompts();
+            }
+        } else {
+            loadResult.textContent = `✗ ${result.message}`;
+            loadResult.className = 'message error';
+        }
+    } catch (error) {
+        // Hide loading overlay on error
+        loadingOverlay.classList.add('hidden');
+        loadResult.textContent = `Error: ${error.message}`;
+        loadResult.className = 'message error';
+    } finally {
+        validateButton.disabled = false;
+    }
+}
+
 // Utility Functions
 function escapeHtml(text) {
     const div = document.createElement('div');
@@ -593,6 +785,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Admin form
     document.getElementById('create-user-form').addEventListener('submit', createUser);
 
+    // S3 Admin buttons
+    document.getElementById('validate-prefix-btn').addEventListener('click', validateS3Prefix);
+    document.getElementById('load-translations-btn').addEventListener('click', loadTranslationsFromS3);
+
+    // Clean tables button
+    document.getElementById('clean-tables-btn').addEventListener('click', cleanDatabaseTables);
+
     // Check if already logged in
     if (state.token) {
         apiRequest('/auth/me')
@@ -608,6 +807,177 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Summary
+let qualityChart = null;
+
+async function loadSummary() {
+    try {
+        const data = await apiRequest('/reports/summary');
+        renderSummary(data);
+    } catch (error) {
+        console.error('Error loading summary:', error);
+    }
+}
+
+function renderSummary(data) {
+    // Update stats cards
+    document.getElementById('summary-total-translations').textContent = data.total_translations;
+    document.getElementById('summary-reviewed').textContent = data.translations_reviewed;
+    document.getElementById('summary-coverage').textContent = `${data.review_percentage}%`;
+
+    // Update detailed metrics (convert 0-1 scale to 0-10 for display)
+    document.getElementById('summary-coherence').textContent =
+        data.avg_manual_coherence ? (data.avg_manual_coherence * 10).toFixed(2) : 'N/A';
+    document.getElementById('summary-fidelity').textContent =
+        data.avg_manual_fidelity ? (data.avg_manual_fidelity * 10).toFixed(2) : 'N/A';
+    document.getElementById('summary-naturalness').textContent =
+        data.avg_manual_naturalness ? (data.avg_manual_naturalness * 10).toFixed(2) : 'N/A';
+    document.getElementById('summary-overall').textContent =
+        data.avg_manual_overall ? (data.avg_manual_overall * 10).toFixed(2) : 'N/A';
+
+    // Render contributors
+    renderContributors(data.contributors);
+
+    // Render chart
+    renderQualityChart(data);
+}
+
+function renderContributors(contributors) {
+    const container = document.getElementById('contributors-list');
+
+    if (contributors.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #7f8c8d;">No contributors yet</p>';
+        return;
+    }
+
+    container.innerHTML = contributors.map(c => `
+        <div class="contributor-item">
+            <span class="contributor-name">${escapeHtml(c.username)}</span>
+            <span class="contributor-count">${c.contributions} review${c.contributions !== 1 ? 's' : ''}</span>
+        </div>
+    `).join('');
+}
+
+function renderQualityChart(data) {
+    const ctx = document.getElementById('quality-chart');
+
+    // Destroy existing chart if it exists
+    if (qualityChart) {
+        qualityChart.destroy();
+    }
+
+    // Convert 0-1 scale to 0-10 for display
+    const overallScore = data.avg_manual_overall ? (data.avg_manual_overall * 10).toFixed(2) : 0;
+    const maxScore = 10;
+    const remainingScore = maxScore - overallScore;
+
+    qualityChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Overall Quality', 'Remaining'],
+            datasets: [{
+                data: [overallScore, remainingScore],
+                backgroundColor: [
+                    '#3498db',
+                    '#ecf0f1'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            if (context.dataIndex === 0) {
+                                return `Score: ${context.parsed}/10`;
+                            }
+                            return null;
+                        }
+                    }
+                }
+            },
+            cutout: '70%'
+        },
+        plugins: [{
+            id: 'centerText',
+            afterDraw: function(chart) {
+                const ctx = chart.ctx;
+                const width = chart.width;
+                const height = chart.height;
+
+                ctx.restore();
+                const fontSize = (height / 114).toFixed(2);
+                ctx.font = `bold ${fontSize}em sans-serif`;
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#2c3e50';
+
+                const text = `${overallScore}/10`;
+                const textX = Math.round((width - ctx.measureText(text).width) / 2);
+                const textY = height / 2;
+
+                ctx.fillText(text, textX, textY);
+                ctx.save();
+            }
+        }]
+    });
+
+    // Update legend
+    const legendContainer = document.getElementById('chart-legend');
+    const percentage = data.review_percentage || 0;
+    legendContainer.innerHTML = `
+        <div style="font-size: 14px; color: #7f8c8d;">
+            Based on ${data.translations_reviewed} manual reviews (${percentage}% coverage)
+        </div>
+    `;
+}
+
+// Export reviews to Excel
+async function exportReviews() {
+    try {
+        const response = await fetch(`${API_BASE}/reports/export/user-reviews`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${state.token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to export reviews');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'my_reviews.xlsx';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+            if (filenameMatch) {
+                filename = filenameMatch[1];
+            }
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (error) {
+        console.error('Error exporting reviews:', error);
+        alert(`Error exporting reviews: ${error.message}`);
+    }
+}
+
 // Make functions globally available
 window.showTranslationDetail = showTranslationDetail;
 window.submitScore = submitScore;
+window.exportReviews = exportReviews;

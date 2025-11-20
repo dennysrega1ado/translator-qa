@@ -57,7 +57,7 @@ services:
     volumes:
       - ./backend:/app
       # AWS SSO/credentials support
-      - ~/.aws:/home/appuser/.aws:ro
+      - ~/.aws:/home/appuser/.aws
     user: "1000:1000"  # Run as appuser to access mounted credentials
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
