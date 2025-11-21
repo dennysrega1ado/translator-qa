@@ -173,20 +173,33 @@ function populateFilters() {
     // Populate execution filters
     const executionFilters = [
         document.getElementById('execution-filter'),
-        document.getElementById('report-execution-filter')
+        document.getElementById('report-execution-filter'),
+        document.getElementById('summary-execution-filter')
     ].filter(el => el !== null);
 
     executionFilters.forEach(select => {
-        select.innerHTML = '<option value="">All Executions</option>';
-        state.executions.forEach(exec => {
-            const option = document.createElement('option');
-            option.value = exec.execution_id;
-            option.textContent = `${exec.execution_id} (${exec.count} translations)`;
-            if (exec.description) {
-                option.title = exec.description;
+        if (state.executions.length === 0) {
+            // No executions available
+            select.innerHTML = '<option value="">No Executions Available</option>';
+            select.disabled = true;
+        } else {
+            // Clear and populate with executions
+            select.innerHTML = '';
+            state.executions.forEach(exec => {
+                const option = document.createElement('option');
+                option.value = exec.execution_id;
+                option.textContent = `${exec.execution_id} (${exec.count} translations)`;
+                if (exec.description) {
+                    option.title = exec.description;
+                }
+                select.appendChild(option);
+            });
+            // Select the most recent execution (first in the list)
+            if (state.executions.length > 0) {
+                select.value = state.executions[0].execution_id;
             }
-            select.appendChild(option);
-        });
+            select.disabled = false;
+        }
     });
 
     // Populate prompt filters
@@ -769,6 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filters (removed for new design)
     // document.getElementById('apply-filters').addEventListener('click', loadTranslations);
     document.getElementById('apply-report-filters').addEventListener('click', loadReports);
+    document.getElementById('apply-summary-filters').addEventListener('click', loadSummary);
 
     // Modal close
     document.querySelector('.close').addEventListener('click', () => {
@@ -776,11 +790,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('click', (e) => {
-        const modal = document.getElementById('translation-modal');
-        if (e.target === modal) {
-            modal.classList.add('hidden');
+        const translationModal = document.getElementById('translation-modal');
+        const exportModal = document.getElementById('export-modal');
+        if (e.target === translationModal) {
+            translationModal.classList.add('hidden');
+        }
+        if (e.target === exportModal) {
+            exportModal.classList.add('hidden');
         }
     });
+
+    // Export modal controls
+    document.getElementById('export-modal-close').addEventListener('click', () => {
+        document.getElementById('export-modal').classList.add('hidden');
+    });
+
+    document.getElementById('export-cancel-btn').addEventListener('click', () => {
+        document.getElementById('export-modal').classList.add('hidden');
+    });
+
+    document.getElementById('export-confirm-btn').addEventListener('click', confirmExport);
 
     // Admin form
     document.getElementById('create-user-form').addEventListener('submit', createUser);
@@ -812,7 +841,14 @@ let qualityChart = null;
 
 async function loadSummary() {
     try {
-        const data = await apiRequest('/reports/summary');
+        const executionId = document.getElementById('summary-execution-filter').value;
+
+        let url = '/reports/summary';
+        if (executionId) {
+            url += `?execution_id=${executionId}`;
+        }
+
+        const data = await apiRequest(url);
         renderSummary(data);
     } catch (error) {
         console.error('Error loading summary:', error);
@@ -938,9 +974,98 @@ function renderQualityChart(data) {
 }
 
 // Export reviews to Excel
-async function exportReviews() {
+function exportReviews() {
+    // Open export modal
+    const modal = document.getElementById('export-modal');
+    populateExportExecutions();
+    modal.classList.remove('hidden');
+}
+
+function populateExportExecutions() {
+    const container = document.getElementById('export-executions-list');
+
+    if (state.executions.length === 0) {
+        container.innerHTML = '<p style="color: #7f8c8d; font-style: italic;">No executions available</p>';
+        document.getElementById('export-all-executions').disabled = true;
+        return;
+    }
+
+    container.innerHTML = state.executions.map(exec => `
+        <div style="margin-bottom: 8px;">
+            <label class="checkbox-label">
+                <input type="checkbox" class="export-execution-checkbox" value="${exec.execution_id}" checked>
+                ${exec.execution_id} (${exec.count} translations)${exec.description ? ` - ${exec.description}` : ''}
+            </label>
+        </div>
+    `).join('');
+
+    // Handle "All Executions" checkbox
+    const allCheckbox = document.getElementById('export-all-executions');
+    const executionCheckboxes = document.querySelectorAll('.export-execution-checkbox');
+
+    allCheckbox.addEventListener('change', function() {
+        executionCheckboxes.forEach(cb => {
+            cb.checked = this.checked;
+            cb.disabled = this.checked;
+        });
+    });
+
+    // Uncheck "All Executions" if any individual checkbox is unchecked
+    executionCheckboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            if (!this.checked) {
+                allCheckbox.checked = false;
+            } else {
+                // Check if all are checked
+                const allChecked = Array.from(executionCheckboxes).every(c => c.checked);
+                if (allChecked) {
+                    allCheckbox.checked = true;
+                }
+            }
+        });
+    });
+}
+
+async function confirmExport() {
     try {
-        const response = await fetch(`${API_BASE}/reports/export/user-reviews`, {
+        const exportMessage = document.getElementById('export-message');
+        const confirmBtn = document.getElementById('export-confirm-btn');
+
+        exportMessage.textContent = '';
+        confirmBtn.disabled = true;
+
+        // Get selected executions
+        const allExecutions = document.getElementById('export-all-executions').checked;
+        let executionIds = [];
+
+        if (!allExecutions) {
+            const checkedBoxes = document.querySelectorAll('.export-execution-checkbox:checked');
+            executionIds = Array.from(checkedBoxes).map(cb => cb.value);
+
+            if (executionIds.length === 0) {
+                exportMessage.textContent = 'Please select at least one execution';
+                exportMessage.className = 'message error';
+                confirmBtn.disabled = false;
+                return;
+            }
+        }
+
+        // Get user filter
+        const userFilter = document.querySelector('input[name="export-user-filter"]:checked').value;
+        const myReviewsOnly = userFilter === 'my-reviews';
+
+        // Get include unreviewed
+        const includeUnreviewed = document.getElementById('export-include-unreviewed').checked;
+
+        // Build query params
+        const params = new URLSearchParams();
+        if (!allExecutions && executionIds.length > 0) {
+            executionIds.forEach(id => params.append('execution_ids', id));
+        }
+        params.append('my_reviews_only', myReviewsOnly);
+        params.append('include_unreviewed', includeUnreviewed);
+
+        const response = await fetch(`${API_BASE}/reports/export/reviews?${params.toString()}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${state.token}`
@@ -953,7 +1078,7 @@ async function exportReviews() {
 
         // Get filename from Content-Disposition header
         const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = 'my_reviews.xlsx';
+        let filename = 'reviews_export.xlsx';
         if (contentDisposition) {
             const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
             if (filenameMatch) {
@@ -971,9 +1096,23 @@ async function exportReviews() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+
+        exportMessage.textContent = 'Export successful!';
+        exportMessage.className = 'message success';
+
+        // Close modal after a short delay
+        setTimeout(() => {
+            document.getElementById('export-modal').classList.add('hidden');
+            exportMessage.textContent = '';
+        }, 1500);
+
     } catch (error) {
         console.error('Error exporting reviews:', error);
-        alert(`Error exporting reviews: ${error.message}`);
+        const exportMessage = document.getElementById('export-message');
+        exportMessage.textContent = `Error: ${error.message}`;
+        exportMessage.className = 'message error';
+    } finally {
+        document.getElementById('export-confirm-btn').disabled = false;
     }
 }
 

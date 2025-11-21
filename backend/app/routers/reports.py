@@ -114,30 +114,46 @@ async def get_reports(
 
 @router.get("/summary", response_model=schemas.SummaryReport)
 async def get_summary(
+    execution_id: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
     Get overall quality summary based on manual scores from all users
     """
-    # Total translations
-    total_translations = db.query(func.count(models.Translation.id)).scalar()
+    # Base query for total translations
+    translations_query = db.query(func.count(models.Translation.id))
+    if execution_id:
+        translations_query = translations_query.filter(models.Translation.execution_id == execution_id)
+    total_translations = translations_query.scalar()
 
     # Translations with at least one manual score
-    translations_reviewed = db.query(
+    reviewed_query = db.query(
         func.count(distinct(models.ManualScore.translation_id))
-    ).scalar() or 0
+    ).join(
+        models.Translation,
+        models.ManualScore.translation_id == models.Translation.id
+    )
+    if execution_id:
+        reviewed_query = reviewed_query.filter(models.Translation.execution_id == execution_id)
+    translations_reviewed = reviewed_query.scalar() or 0
 
     # Calculate review percentage
     review_percentage = round((translations_reviewed / total_translations * 100) if total_translations > 0 else 0, 2)
 
     # Average manual scores across all translations
-    avg_scores = db.query(
+    avg_scores_query = db.query(
         func.avg(models.ManualScore.overall).label('avg_overall'),
         func.avg(models.ManualScore.coherence).label('avg_coherence'),
         func.avg(models.ManualScore.fidelity).label('avg_fidelity'),
         func.avg(models.ManualScore.naturalness).label('avg_naturalness'),
-    ).first()
+    ).join(
+        models.Translation,
+        models.ManualScore.translation_id == models.Translation.id
+    )
+    if execution_id:
+        avg_scores_query = avg_scores_query.filter(models.Translation.execution_id == execution_id)
+    avg_scores = avg_scores_query.first()
 
     # Get contributors (users who have submitted manual scores)
     contributors_query = db.query(
@@ -146,7 +162,14 @@ async def get_summary(
     ).join(
         models.ManualScore,
         models.User.id == models.ManualScore.user_id
-    ).group_by(
+    ).join(
+        models.Translation,
+        models.ManualScore.translation_id == models.Translation.id
+    )
+    if execution_id:
+        contributors_query = contributors_query.filter(models.Translation.execution_id == execution_id)
+
+    contributors_results = contributors_query.group_by(
         models.User.id,
         models.User.username
     ).order_by(
@@ -155,7 +178,7 @@ async def get_summary(
 
     contributors = [
         schemas.ContributorUser(username=c.username, contributions=c.contributions)
-        for c in contributors_query
+        for c in contributors_results
     ]
 
     return schemas.SummaryReport(
@@ -170,12 +193,238 @@ async def get_summary(
     )
 
 
+@router.get("/export/reviews")
+async def export_reviews(
+    execution_ids: Optional[List[str]] = Query(None),
+    my_reviews_only: bool = Query(True),
+    include_unreviewed: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    Export translation reviews to Excel with flexible filtering
+
+    Parameters:
+    - execution_ids: List of execution IDs to include (optional, if None includes all)
+    - my_reviews_only: If True, only include current user's reviews. If False, include all users
+    - include_unreviewed: If True, include translations without reviews
+    """
+    # Base query
+    if include_unreviewed:
+        # Include all translations (with or without reviews)
+        translations_query = db.query(
+            models.Translation,
+            models.ManualScore,
+            models.Prompt.name.label('prompt_name'),
+            models.User.username.label('reviewer_username')
+        ).outerjoin(
+            models.ManualScore,
+            models.Translation.id == models.ManualScore.translation_id
+        ).outerjoin(
+            models.User,
+            models.ManualScore.user_id == models.User.id
+        ).join(
+            models.Prompt,
+            models.Translation.prompt_id == models.Prompt.id
+        )
+    else:
+        # Only translations with reviews
+        translations_query = db.query(
+            models.Translation,
+            models.ManualScore,
+            models.Prompt.name.label('prompt_name'),
+            models.User.username.label('reviewer_username')
+        ).join(
+            models.ManualScore,
+            models.Translation.id == models.ManualScore.translation_id
+        ).join(
+            models.User,
+            models.ManualScore.user_id == models.User.id
+        ).join(
+            models.Prompt,
+            models.Translation.prompt_id == models.Prompt.id
+        )
+
+    # Apply execution filter
+    if execution_ids and len(execution_ids) > 0:
+        translations_query = translations_query.filter(
+            models.Translation.execution_id.in_(execution_ids)
+        )
+
+    # Apply user filter
+    if my_reviews_only:
+        if include_unreviewed:
+            # Include unreviewed translations OR translations reviewed by current user
+            translations_query = translations_query.filter(
+                (models.ManualScore.user_id == current_user.id) |
+                (models.ManualScore.user_id == None)
+            )
+        else:
+            translations_query = translations_query.filter(
+                models.ManualScore.user_id == current_user.id
+            )
+
+    translations_query = translations_query.order_by(
+        models.Translation.created_at.desc()
+    )
+
+    results = translations_query.all()
+
+    # Create workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Reviews Export"
+
+    # Define headers based on export type
+    headers = [
+        'Translation ID',
+        'Execution ID',
+        'Prompt Name',
+        'Source Language',
+        'Target Language',
+        'Original Content',
+        'Translated Content',
+        'Automated Coherence',
+        'Automated Fidelity',
+        'Automated Naturalness',
+        'Automated Overall'
+    ]
+
+    # Add reviewer column if exporting all users
+    if not my_reviews_only:
+        headers.append('Reviewer')
+
+    # Add manual score columns only if not including unreviewed
+    if not include_unreviewed or any(r[1] is not None for r in results):
+        headers.extend([
+            'Manual Coherence',
+            'Manual Fidelity',
+            'Manual Naturalness',
+            'Manual Overall',
+            'Review Notes',
+            'Review Date'
+        ])
+
+    headers.append('Translation Date')
+
+    # Style header row
+    header_fill = PatternFill(start_color="3498db", end_color="3498db", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+
+    # Add data rows
+    for row_num, result in enumerate(results, 2):
+        translation = result[0]
+        manual_score = result[1]
+        prompt_name = result[2]
+        reviewer_username = result[3] if len(result) > 3 else None
+
+        col = 1
+        ws.cell(row=row_num, column=col, value=translation.id)
+        col += 1
+        ws.cell(row=row_num, column=col, value=translation.execution_id)
+        col += 1
+        ws.cell(row=row_num, column=col, value=prompt_name)
+        col += 1
+        ws.cell(row=row_num, column=col, value=translation.source_language)
+        col += 1
+        ws.cell(row=row_num, column=col, value=translation.target_language)
+        col += 1
+        ws.cell(row=row_num, column=col, value=translation.original_content)
+        col += 1
+        ws.cell(row=row_num, column=col, value=translation.translated_content)
+        col += 1
+
+        # Automated scores (convert to 0-10 scale for readability)
+        ws.cell(row=row_num, column=col, value=round(translation.automated_coherence * 10, 2) if translation.automated_coherence else None)
+        col += 1
+        ws.cell(row=row_num, column=col, value=round(translation.automated_fidelity * 10, 2) if translation.automated_fidelity else None)
+        col += 1
+        ws.cell(row=row_num, column=col, value=round(translation.automated_naturalness * 10, 2) if translation.automated_naturalness else None)
+        col += 1
+        ws.cell(row=row_num, column=col, value=round(translation.automated_overall * 10, 2) if translation.automated_overall else None)
+        col += 1
+
+        # Reviewer username (if exporting all users)
+        if not my_reviews_only:
+            ws.cell(row=row_num, column=col, value=reviewer_username if reviewer_username else 'Unreviewed')
+            col += 1
+
+        # Manual scores (if available)
+        if not include_unreviewed or manual_score is not None:
+            ws.cell(row=row_num, column=col, value=round(manual_score.coherence * 10, 2) if manual_score and manual_score.coherence else None)
+            col += 1
+            ws.cell(row=row_num, column=col, value=round(manual_score.fidelity * 10, 2) if manual_score and manual_score.fidelity else None)
+            col += 1
+            ws.cell(row=row_num, column=col, value=round(manual_score.naturalness * 10, 2) if manual_score and manual_score.naturalness else None)
+            col += 1
+            ws.cell(row=row_num, column=col, value=round(manual_score.overall * 10, 2) if manual_score and manual_score.overall else None)
+            col += 1
+            ws.cell(row=row_num, column=col, value=manual_score.notes if manual_score else None)
+            col += 1
+            ws.cell(row=row_num, column=col, value=manual_score.created_at.strftime('%Y-%m-%d %H:%M:%S') if manual_score and manual_score.created_at else None)
+            col += 1
+
+        ws.cell(row=row_num, column=col, value=translation.created_at.strftime('%Y-%m-%d %H:%M:%S') if translation.created_at else None)
+
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            try:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)  # Max width 50
+        ws.column_dimensions[column_letter].width = adjusted_width
+
+    # Save to BytesIO
+    excel_file = BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+
+    # Generate filename with timestamp and filters
+    filter_parts = []
+    if execution_ids and len(execution_ids) > 0:
+        filter_parts.append(f"{len(execution_ids)}execs")
+    else:
+        filter_parts.append("all_execs")
+
+    if my_reviews_only:
+        filter_parts.append(current_user.username)
+    else:
+        filter_parts.append("all_users")
+
+    if include_unreviewed:
+        filter_parts.append("with_unreviewed")
+
+    filename = f"reviews_export_{'_'.join(filter_parts)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    # Return as streaming response
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
+
 @router.get("/export/user-reviews")
 async def export_user_reviews(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
+    DEPRECATED: Use /export/reviews instead
     Export current user's translation reviews to Excel
     Excludes execution_id and prompt_id fields
     """
